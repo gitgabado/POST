@@ -42,7 +42,7 @@ def load_image(image_path: str) -> Image.Image:
 def generate_prompt_with_openai(api_key: str, description: str, occasion: str) -> str:
     """
     Use OpenAI's ChatCompletion to generate a more creative and descriptive prompt
-    based on user input. This prompt will then be used to generate the DALL·E image.
+    based on user input.
     """
     openai.api_key = api_key
     messages = [
@@ -61,7 +61,7 @@ def generate_prompt_with_openai(api_key: str, description: str, occasion: str) -
 def generate_ai_image(api_key: str, prompt: str):
     """
     Use OpenAI's Image.create to generate an image from a prompt.
-    DALL·E images are by default 1024x1024. We will have to resize/crop to desired aspect ratio later.
+    By default, DALL·E returns 1024x1024 images.
     """
     openai.api_key = api_key
     response = openai.Image.create(
@@ -77,40 +77,33 @@ def generate_ai_image(api_key: str, prompt: str):
 
 def fit_image_to_size(img: Image.Image, target_size: tuple) -> Image.Image:
     """
-    Resize and possibly pad the generated image to match the target_size exactly,
-    without excessive distortion.
+    Resize and pad/crop the generated image to match target_size exactly.
     """
     tw, th = target_size
-    # Calculate aspect ratios
     w, h = img.size
     img_aspect = w / h
     target_aspect = tw / th
 
-    # If image aspect > target aspect, match width and crop/pad height
-    # Otherwise, match height and crop/pad width
     if img_aspect > target_aspect:
-        # Image is wider than target. Fit width, crop/pad height
+        # Fit width, adjust height
         new_width = tw
         new_height = int(tw / img_aspect)
         img = img.resize((new_width, new_height), Resampling.LANCZOS)
-        # Pad if needed
         if new_height < th:
-            padding = (0, (th - new_height)//2, 0, (th - new_height)-(th - new_height)//2)
+            padding = (0, (th - new_height)//2, 0, (th - new_height)-((th - new_height)//2))
             img = ImageOps.expand(img, padding, fill=(255,255,255,0))
         elif new_height > th:
-            # Crop vertical center
             top = (new_height - th)//2
             img = img.crop((0, top, tw, top+th))
     else:
-        # Image is taller. Fit height, crop/pad width
+        # Fit height, adjust width
         new_height = th
         new_width = int(th * img_aspect)
         img = img.resize((new_width, new_height), Resampling.LANCZOS)
         if new_width < tw:
-            padding = ((tw - new_width)//2, 0, (tw - new_width)-(tw - new_width)//2, 0)
+            padding = ((tw - new_width)//2, 0, (tw - new_width)-((tw - new_width)//2), 0)
             img = ImageOps.expand(img, padding, fill=(255,255,255,0))
         elif new_width > tw:
-            # Crop horizontal center
             left = (new_width - tw)//2
             img = img.crop((left, 0, left+tw, th))
 
@@ -118,23 +111,19 @@ def fit_image_to_size(img: Image.Image, target_size: tuple) -> Image.Image:
 
 def add_brand_logo(base_img: Image.Image, logo_path: str):
     """
-    Add the brand logo in the top-left corner with a small margin.
+    Add the brand logo in the top-left corner.
     """
     logo_img = load_image(logo_path)
-    # Resize logo to a smaller portion of image height
     w, h = base_img.size
     logo_height = int(h * 0.15)
     aspect = logo_img.width / logo_img.height
     logo_width = int(logo_height * aspect)
     logo_img = logo_img.resize((logo_width, logo_height), Resampling.LANCZOS)
-
-    # Paste with alpha
     base_img.alpha_composite(logo_img, (30,30))
 
 def add_text_overlays(base_img: Image.Image, brand_config: BrandConfig, description: str, occasion: str):
     """
-    Add text overlays (description and occasion) at the bottom area of the image.
-    We'll overlay a semi-transparent box for text visibility.
+    Add text overlays at the bottom area of the image.
     """
     draw = ImageDraw.Draw(base_img)
     try:
@@ -147,25 +136,19 @@ def add_text_overlays(base_img: Image.Image, brand_config: BrandConfig, descript
     except:
         secondary_font = ImageFont.load_default()
 
-    # Text color (white)
     text_color = (255,255,255,255)
     w, h = base_img.size
-
-    # Prepare text
-    top_text = description
-    bottom_text = occasion if occasion else ""
-
-    # Measure text
-    def text_bbox(txt, font):
-        return draw.textbbox((0,0), txt, font=font)
-
-    # We'll place texts at bottom area
     padding = 50
     total_area_height = 250
     overlay = Image.new("RGBA", (w, total_area_height), (0,0,0,100))
     base_img.alpha_composite(overlay, (0, h - total_area_height - padding))
 
-    # Draw top text centered
+    def text_bbox(txt, font):
+        return draw.textbbox((0,0), txt, font=font)
+
+    top_text = description
+    bottom_text = occasion if occasion else ""
+
     top_box = text_bbox(top_text, primary_font)
     tw = top_box[2]-top_box[0]
     th = top_box[3]-top_box[1]
@@ -184,14 +167,14 @@ def add_text_overlays(base_img: Image.Image, brand_config: BrandConfig, descript
 
 def generate_post_image(brand_config: BrandConfig, post_config: PostConfig, openai_key: str, no_user_image: bool) -> Image.Image:
     if no_user_image:
-        # Generate prompt
+        # Use OpenAI ChatCompletion to refine prompt
         prompt = generate_prompt_with_openai(openai_key, post_config.description, post_config.occasion)
-        # Generate AI image
+        # Generate AI image via DALL·E
         ai_img = generate_ai_image(openai_key, prompt)
-        # Fit to desired size
+        # Fit to chosen size
         base_img = fit_image_to_size(ai_img, post_config.desired_output_size)
     else:
-        # Use user image directly
+        # Use uploaded user image
         base_img = load_image(post_config.user_image_path)
         base_img = base_img.resize(post_config.desired_output_size, Resampling.LANCZOS)
 
@@ -204,9 +187,7 @@ def generate_post_image(brand_config: BrandConfig, post_config: PostConfig, open
 
     return base_img
 
-# ---------- STREAMLIT UI ---------- #
 st.title("Generate Social Creatives")
-
 st.write("Generate engagement-focused social media post creatives using AI.")
 
 openai_key = st.text_input("OpenAI API Key:", type="password", help="Enter your OpenAI API key to enable AI generation.")
