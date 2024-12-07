@@ -3,6 +3,20 @@ from PIL import Image, ImageDraw, ImageFont
 import requests
 import io
 import os
+import time
+
+# Helper function for retries
+def make_api_call_with_retries(url, headers, json, max_retries=5):
+    for attempt in range(max_retries):
+        response = requests.post(url, headers=headers, json=json)
+        if response.status_code == 429:  # Too many requests
+            st.warning("Rate limit reached. Retrying...")
+            time.sleep(2 ** attempt)  # Exponential backoff
+            continue
+        response.raise_for_status()  # Raise other errors
+        return response
+    st.error("Max retries reached. Please try again later.")
+    return None
 
 # Title and description
 st.title("Social Media Post Generator")
@@ -17,8 +31,8 @@ brand_logo = st.sidebar.file_uploader("Upload Brand Logo (PNG)", type=["png"])
 primary_color = st.sidebar.color_picker("Primary Color")
 secondary_color = st.sidebar.color_picker("Secondary Color")
 
-
 font_path = st.sidebar.text_input("Font Path (optional, leave blank for default font)", "")
+
 post_size = st.sidebar.selectbox(
     "Select Post Size",
     ["1080x1080", "1200x628", "1080x1920"],
@@ -53,17 +67,19 @@ if st.button("Generate Post"):
             prompt += f". Occasion: {occession}"
 
         try:
-            completion_response = requests.post(
+            completion_response = make_api_call_with_retries(
                 "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json={
+                headers,
+                {
                     "model": "gpt-4",
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
-            completion_response.raise_for_status()
-            refined_prompt = completion_response.json()["choices"][0]["message"]["content"]
-            st.success("Refined prompt generated successfully.")
+            if completion_response:
+                refined_prompt = completion_response.json()["choices"][0]["message"]["content"]
+                st.success("Refined prompt generated successfully.")
+            else:
+                refined_prompt = prompt
         except Exception as e:
             st.error(f"Error generating text: {str(e)}")
             refined_prompt = prompt
@@ -71,16 +87,18 @@ if st.button("Generate Post"):
         # Generate background image if not uploaded
         if not background_image:
             try:
-                image_response = requests.post(
+                image_response = make_api_call_with_retries(
                     "https://api.openai.com/v1/images/generations",
-                    headers=headers,
-                    json={"prompt": refined_prompt, "n": 1, "size": "1024x1024"},
+                    headers,
+                    {"prompt": refined_prompt, "n": 1, "size": "1024x1024"},
                 )
-                image_response.raise_for_status()
-                image_url = image_response.json()["data"][0]["url"]
-                response = requests.get(image_url)
-                generated_image = Image.open(io.BytesIO(response.content))
-                st.success("Background image generated successfully.")
+                if image_response:
+                    image_url = image_response.json()["data"][0]["url"]
+                    response = requests.get(image_url)
+                    generated_image = Image.open(io.BytesIO(response.content))
+                    st.success("Background image generated successfully.")
+                else:
+                    generated_image = None
             except Exception as e:
                 st.error(f"Error generating image: {str(e)}")
                 generated_image = None
