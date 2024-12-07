@@ -18,8 +18,7 @@ primary_color = st.sidebar.color_picker("Primary Color")
 secondary_color = st.sidebar.color_picker("Secondary Color")
 
 font_path = st.sidebar.text_input(
-    "Font Path (optional, leave blank for default font)", """)
-
+    font_path = st.sidebar.text_input("Font Path (optional, leave blank for default font)", "")
 post_size = st.sidebar.selectbox(
     "Select Post Size",
     ["1080x1080", "1200x628", "1080x1920"],
