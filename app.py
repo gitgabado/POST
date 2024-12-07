@@ -5,13 +5,14 @@ import io
 import os
 import time
 
-# Helper function for retries
-def make_api_call_with_retries(url, headers, json, max_retries=5):
+# Helper function for retries with better delay management
+def make_api_call_with_retries(url, headers, json, max_retries=5, delay=5):
     for attempt in range(max_retries):
         response = requests.post(url, headers=headers, json=json)
         if response.status_code == 429:  # Too many requests
-            st.warning("Rate limit reached. Retrying...")
-            time.sleep(2 ** attempt)  # Exponential backoff
+            st.warning(f"Rate limit reached. Retrying in {delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+            time.sleep(delay)  # Delay before retrying
+            delay *= 2  # Exponential backoff
             continue
         response.raise_for_status()  # Raise other errors
         return response
