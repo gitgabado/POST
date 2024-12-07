@@ -28,44 +28,31 @@ def load_image(image_path: str) -> Image.Image:
     return Image.open(image_path).convert("RGBA")
 
 def generate_ai_image(prompt: str, size: tuple=(1080,1080)):
-    # Placeholder: Replace with call to Stable Diffusion / DALL·E API
-    # Here, we just produce a blank canvas as a placeholder.
+    # Placeholder: Replace with a real AI image generation integration
     img = Image.new("RGBA", size, (255, 255, 255, 255))
     d = ImageDraw.Draw(img)
     d.text((50,50), f"AI Image:\n{prompt}", fill=(0,0,0))
     return img
 
 def add_stylized_overlay(base_img: Image.Image, brand_config: BrandConfig):
-    """
-    Add stylized shapes and brand elements over the AI-generated or user-provided background.
-    For example, create a curved shape in the corner, add a wavy banner, etc.
-    """
-
     draw = ImageDraw.Draw(base_img, "RGBA")
-
-    # Example: Add a rounded rect or wavy shape at the bottom-left corner
-    # to hold text, using a primary brand color as background.
     shape_color = brand_config.primary_colors[0] if brand_config.primary_colors else "#FF0000"
     secondary_color = brand_config.secondary_colors[0] if brand_config.secondary_colors else "#000000"
 
-    # Draw a large black (secondary color) wave at bottom
-    # Here we just simulate a curved shape by drawing circles and rectangles:
     width, height = base_img.size
     wave_height = int(height * 0.3)
     wave_img = Image.new("RGBA", (width, wave_height), (0,0,0,0))
     wdraw = ImageDraw.Draw(wave_img, "RGBA")
 
-    # Create a curve using a combination of ellipse and rectangle
-    # For a better design, consider using pre-made SVG or a masked overlay
+    # Create a wave-like shape at the bottom using ellipses and rectangles
     wdraw.rectangle([0, wave_height//2, width, wave_height], fill=secondary_color)
     wdraw.ellipse([-(wave_height), 0, wave_height, wave_height], fill=secondary_color)
     wdraw.ellipse([width-wave_height, 0, width+wave_height, wave_height], fill=secondary_color)
 
-    # Paste this "wave" onto the base image at the bottom
+    # Paste the wave onto the base image
     base_img.alpha_composite(wave_img, (0, height - wave_height))
 
-    # Now, add a smaller shape on top of the black wave, for text background, using primary color:
-    # Let's do a rounded rectangle
+    # Add a rounded rectangle for text background
     text_bg_margin = 50
     text_bg_width = width - text_bg_margin*2
     text_bg_height = 200
@@ -75,7 +62,6 @@ def add_stylized_overlay(base_img: Image.Image, brand_config: BrandConfig):
     text_bg_y1 = text_bg_y0 + text_bg_height
     corner_radius = 50
 
-    # Create a rounded rectangle mask
     text_bg = Image.new("RGBA", (text_bg_width, text_bg_height), (0,0,0,0))
     tb_draw = ImageDraw.Draw(text_bg, "RGBA")
     tb_draw.rounded_rectangle([0,0,text_bg_width,text_bg_height], corner_radius, fill=shape_color)
@@ -84,7 +70,7 @@ def add_stylized_overlay(base_img: Image.Image, brand_config: BrandConfig):
     return (text_bg_x0, text_bg_y0, text_bg_width, text_bg_height)
 
 def generate_post_image(brand_config: BrandConfig, post_config: PostConfig) -> Image.Image:
-    # Determine which image to use as background
+    # Determine background image
     if post_config.user_image_path:
         base_img = load_image(post_config.user_image_path)
     else:
@@ -93,17 +79,16 @@ def generate_post_image(brand_config: BrandConfig, post_config: PostConfig) -> I
 
     base_img = base_img.resize(post_config.desired_output_size, Resampling.LANCZOS)
 
-    # Add stylized overlay elements
+    # Add stylized overlay
     text_area = add_stylized_overlay(base_img, brand_config)
 
-    # Add the brand logo if provided, place it on the top-left corner (or any corner desired)
+    # Add brand logo if available
     if brand_config.brand_logo_path:
         logo_img = load_image(brand_config.brand_logo_path)
         logo_size = (int(post_config.desired_output_size[0]*0.15), int(post_config.desired_output_size[1]*0.15))
         logo_img = logo_img.resize(logo_size, Resampling.LANCZOS)
 
-        # Add a subtle shadow behind the logo
-        # Create shadow by placing a blurred black shape behind
+        # Add subtle shadow behind logo
         shadow_offset = 5
         logo_shadow = Image.new("RGBA", logo_size, (0,0,0,0))
         ls_draw = ImageDraw.Draw(logo_shadow)
@@ -112,10 +97,9 @@ def generate_post_image(brand_config: BrandConfig, post_config: PostConfig) -> I
         base_img.alpha_composite(logo_shadow, (30+shadow_offset,30+shadow_offset))
         base_img.alpha_composite(logo_img, (30,30))
 
-    # Add text overlays on the shaped area
     draw = ImageDraw.Draw(base_img)
 
-    # Load fonts
+    # Load fonts, fallback to default if not found
     try:
         primary_font = ImageFont.truetype(brand_config.primary_font_path, size=60)
     except:
@@ -126,26 +110,31 @@ def generate_post_image(brand_config: BrandConfig, post_config: PostConfig) -> I
     except:
         secondary_font = ImageFont.load_default()
 
-    text_color = (255,255,255) # White text on brand color background
+    text_color = (255,255,255)
     description_text = post_config.description
     w = text_area[2]
     h = text_area[3]
 
-    # Center the description text horizontally in the text area
-    desc_w, desc_h = draw.textsize(description_text, font=primary_font)
-    desc_x = text_area[0] + (w - desc_w)//2
-    desc_y = text_area[1] + (h - desc_h)//2 - 20  # slightly up
+    # Measure text using textbbox instead of textsize
+    desc_bbox = draw.textbbox((0,0), description_text, font=primary_font)
+    desc_w = desc_bbox[2] - desc_bbox[0]
+    desc_h = desc_bbox[3] - desc_bbox[1]
 
-    # Occasion text below description, if any
-    occ_text = post_config.occasion
+    desc_x = text_area[0] + (w - desc_w)//2
+    desc_y = text_area[1] + (h - desc_h)//2 - 20
+
+    occ_text = post_config.occasion if post_config.occasion else ""
+    occ_bbox = draw.textbbox((0,0), occ_text, font=secondary_font) if occ_text else (0,0,0,0)
+    occ_w = occ_bbox[2] - occ_bbox[0]
+    occ_h = occ_bbox[3] - occ_bbox[1]
+
+    # If there's occasion text, place it below the description
     if occ_text:
-        occ_w, occ_h = draw.textsize(occ_text, font=secondary_font)
+        desc_y = desc_y - (occ_h//2)  # Move description up a bit so both lines fit nicely
         occ_x = text_area[0] + (w - occ_w)//2
         occ_y = desc_y + desc_h + 20
-    else:
-        occ_w = occ_h = 0
 
-    # Draw drop shadow behind text for better readability
+    # Draw drop shadows behind text
     for offset in [(2,2), (2,-2), (-2,2), (-2,-2)]:
         draw.text((desc_x+offset[0], desc_y+offset[1]), description_text, font=primary_font, fill=(0,0,0,128))
         if occ_text:
@@ -157,7 +146,6 @@ def generate_post_image(brand_config: BrandConfig, post_config: PostConfig) -> I
         draw.text((occ_x, occ_y), occ_text, font=secondary_font, fill=text_color)
 
     return base_img
-
 
 # ---------- STREAMLIT UI ---------- #
 st.title("Social Media Post Generator")
